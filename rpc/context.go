@@ -9,11 +9,9 @@ import (
 )
 
 type context struct {
-	implName        string
-	constructorName string
-	proto           *protobuf.Package
-	pkg             *types.Package
-	imports         []string
+	proto   *protobuf.Package
+	pkg     *types.Package
+	imports []string
 }
 
 func (c *context) isNameDefined(name string) bool {
@@ -105,11 +103,36 @@ func (c *context) addImport(path string) {
 	c.imports = append(c.imports, path)
 }
 
-func serviceImplName(pkg *protobuf.Package) string {
-	n := pkg.ServiceName()
-	return strings.ToLower(string(n[0])) + n[1:] + "Server"
+func firstUpper(n string) string {
+	return strings.ToUpper(string(n[0])) + n[1:]
 }
 
-func constructorName(pkg *protobuf.Package) string {
-	return fmt.Sprintf("New%sServer", pkg.ServiceName())
+func firstLower(n string) string {
+	return strings.ToLower(string(n[0])) + n[1:]
+}
+
+func serverImplName(n string) string {
+	return firstLower(n) + "Server"
+}
+
+func serverInfName(n string) string {
+	return firstUpper(n) + "Server"
+}
+
+func clientInfName(n string) string {
+	return firstUpper(n) + "Client"
+}
+
+func clientImplName(n string) string {
+	// name xxxClient is already taken by protobuf codegen
+	return firstLower(n) + "Remote"
+}
+
+func serverConstructorName(n string) string {
+	return fmt.Sprintf("New%sServer", firstUpper(n))
+}
+
+func clientConstructorName(n string) string {
+	// name NewXxxClient is already taken by protobuf codegen
+	return fmt.Sprintf("New%sRemote", firstUpper(n))
 }

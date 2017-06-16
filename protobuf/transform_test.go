@@ -726,7 +726,7 @@ func (s *TransformerSuite) TestTransform() {
 	}, pkg.Imports)
 	s.Equal(1, len(pkg.Enums))
 	s.Equal(5, len(pkg.Messages))
-	s.Equal(0, len(pkg.RPCs))
+	s.Equal(0, len(pkg.Services))
 
 	pkg = s.t.Transform(pkgs[1])
 	s.Equal("gopkg.in.srcd.proteus.v1.fixtures.subpkg", pkg.Name)
@@ -743,13 +743,23 @@ func (s *TransformerSuite) TestTransform() {
 		"Point",
 		"Point_GeneratedMethodOnPointerRequest",
 		"Point_GeneratedMethodRequest",
+		"GenArgsRequest",
+		"GenArgsErrRequest",
+		"GenRetResponse",
+		"GenRetErrResponse",
+		"GenVarRequest",
+		"GenVarResponse",
+		"NameRequest",
+		"NameResponse",
 	}
 	s.Equal(len(msgs), len(pkg.Messages))
 	for _, m := range pkg.Messages {
 		s.True(hasString(m.Name, msgs), fmt.Sprintf("should have message %s", m.Name))
 	}
 
-	s.Equal(4, len(pkg.RPCs))
+	s.Equal(2, len(pkg.Services))
+	s.Equal(4, len(pkg.Services[0].RPCs))
+	s.Equal(6, len(pkg.Services[1].RPCs))
 }
 
 func hasString(str string, coll []string) bool {

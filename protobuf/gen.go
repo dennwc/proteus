@@ -43,8 +43,8 @@ func (g *Generator) Generate(pkg *Package) error {
 		buf.WriteRune('\n')
 	}
 
-	if len(pkg.RPCs) > 0 {
-		writeService(&buf, pkg)
+	for _, svc := range pkg.Services {
+		writeService(&buf, svc)
 	}
 
 	return g.writeFile(pkg.Path, buf.Bytes())
@@ -171,9 +171,9 @@ func writeDocs(buf *bytes.Buffer, docs []string, indent bool) {
 	}
 }
 
-func writeService(buf *bytes.Buffer, pkg *Package) {
-	buf.WriteString(fmt.Sprintf("service %s {\n", pkg.ServiceName()))
-	for _, rpc := range pkg.RPCs {
+func writeService(buf *bytes.Buffer, svc *Service) {
+	buf.WriteString(fmt.Sprintf("service %s {\n", svc.Name))
+	for _, rpc := range svc.RPCs {
 		writeDocs(buf, rpc.Docs, true)
 		buf.WriteString(fmt.Sprintf(
 			"\trpc %s (%s) returns (%s);\n",

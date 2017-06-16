@@ -48,3 +48,14 @@ type MyContainer struct {
 func (c *MyContainer) Name() string {
 	return c.Name()
 }
+
+// Svc ...
+//proteus:generate
+type Svc interface{
+	Name() string
+	GenArgs(x, y int) *Point
+	GenArgsErr(x, y int) (*Point, error)
+	GenRet(s *Point) (x, y int)
+	GenRetErr(s *Point) (x, y int, err error)
+	GenVar(s string, p ...*Point) error
+}

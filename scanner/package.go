@@ -10,13 +10,14 @@ import (
 // a reference of all defined structs and type aliases.
 // A Package is only safe to use once it is resolved.
 type Package struct {
-	Resolved bool
-	Path     string
-	Name     string
-	Structs  []*Struct
-	Enums    []*Enum
-	Funcs    []*Func
-	Aliases  map[string]Type
+	Resolved   bool
+	Path       string
+	Name       string
+	Structs    []*Struct
+	Enums      []*Enum
+	Funcs      []*Func
+	Interfaces []*Interface
+	Aliases    map[string]Type
 }
 
 // collectEnums finds the enum values collected during the scan and generates
@@ -137,8 +138,9 @@ func (b Basic) UnqualifiedName() string {
 // Named is non-basic type identified by a name on some package.
 type Named struct {
 	*BaseType
-	Path string
-	Name string
+	Path      string
+	Name      string
+	Interface bool
 }
 
 // String returns a string representation for the type
@@ -165,6 +167,17 @@ func NewNamed(path, name string) Type {
 		newBaseType(),
 		path,
 		name,
+		false,
+	}
+}
+
+// NewNamedInterface creates a new named interface type given its package path and name.
+func NewNamedInterface(path, name string) Type {
+	return &Named{
+		newBaseType(),
+		path,
+		name,
+		true,
 	}
 }
 
@@ -315,4 +328,11 @@ type Func struct {
 	Output   []Type
 	// IsVariadic will be true if the last input parameter is variadic.
 	IsVariadic bool
+}
+
+// Interface represents a Go interface with its name and methods.
+type Interface struct {
+	Docs
+	Name    string
+	Methods []*Func
 }

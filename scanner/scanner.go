@@ -147,7 +147,8 @@ func (p *Package) scanObject(ctx *context, o types.Object) error {
 				scanEnumValue(ctx, o.Name(), t, hasStringMethod)
 			}
 		case *types.TypeName:
-			if s, ok := t.Underlying().(*types.Struct); ok {
+			switch s := t.Underlying().(type) {
+			case *types.Struct:
 				st := scanStruct(
 					&Struct{
 						Name:       o.Name(),
@@ -158,6 +159,16 @@ func (p *Package) scanObject(ctx *context, o types.Object) error {
 				)
 				ctx.trySetDocs(o.Name(), st)
 				p.Structs = append(p.Structs, st)
+				return nil
+			case *types.Interface:
+				inf := scanInterface(
+					&Interface{
+						Name: o.Name(),
+					},
+					s,
+				)
+				ctx.trySetDocs(o.Name(), inf)
+				p.Interfaces = append(p.Interfaces, inf)
 				return nil
 			}
 
@@ -231,6 +242,9 @@ func scanType(typ types.Type) (t Type) {
 			removeGoPath(u.Obj().Pkg()),
 			u.Obj().Name(),
 		)
+		if _, inf := typ.Underlying().(*types.Interface); inf {
+			t.(*Named).Interface = true
+		}
 	case *types.Slice:
 		t = scanType(u.Elem())
 		t.SetRepeated(true)
@@ -298,6 +312,17 @@ func scanStruct(s *Struct, elem *types.Struct) *Struct {
 		s.Fields = append(s.Fields, f)
 	}
 
+	return s
+}
+
+func scanInterface(s *Interface, elem *types.Interface) *Interface {
+	for i := 0; i < elem.NumMethods(); i++ {
+		v := elem.Method(i)
+
+		f := &Func{Name: v.Name()}
+		f = scanFunc(f, v.Type().(*types.Signature))
+		s.Methods = append(s.Methods, f)
+	}
 	return s
 }
 

@@ -17,7 +17,7 @@ type Package struct {
 	Options  Options
 	Messages []*Message
 	Enums    []*Enum
-	RPCs     []*RPC
+	Services []*Service
 }
 
 // Import tries to import the given protobuf type to the current package.
@@ -45,9 +45,9 @@ func (p *Package) isImported(file string) bool {
 	return false
 }
 
-// ServiceName returns the service name of the package.
-func (p *Package) ServiceName() string {
-	parts := strings.Split(p.Name, ".")
+// ServiceName returns the service name.
+func ServiceName(name string) string {
+	parts := strings.Split(name, ".")
 	last := parts[len(parts)-1]
 	return strings.ToUpper(string(last[0])) + last[1:] + "Service"
 }
@@ -340,4 +340,14 @@ type RPC struct {
 	Input      Type
 	Output     Type
 	Options    Options
+}
+
+// Service is logical group of multiple RPC methods.
+type Service struct {
+	Docs []string
+	Name string
+	RPCs []*RPC
+	// Global determines if server should be defined as a set of global functions.
+	Global  bool
+	Options Options
 }

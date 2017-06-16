@@ -83,10 +83,25 @@ func (t *Transformer) Transform(p *scanner.Package) *Package {
 	}
 
 	names := buildNameSet(p)
+	var funcs []*RPC
 	for _, f := range p.Funcs {
 		rpc := t.transformFunc(pkg, f, names)
 		if rpc != nil {
-			pkg.RPCs = append(pkg.RPCs, rpc)
+			funcs = append(funcs, rpc)
+		}
+	}
+	if len(funcs) != 0 {
+		pkg.Services = append(pkg.Services, &Service{
+			Name:   ServiceName(pkg.Name),
+			Global: true,
+			RPCs:   funcs,
+		})
+	}
+
+	for _, inf := range p.Interfaces {
+		svc := t.transformInterface(pkg, inf, names)
+		if svc != nil {
+			pkg.Services = append(pkg.Services, svc)
 		}
 	}
 
@@ -105,8 +120,9 @@ func (t *Transformer) transformFunc(pkg *Package, f *scanner.Func, names nameSet
 			report.Warn("invalid receiver type for func %s", f.Name)
 			return nil
 		}
-
-		name = fmt.Sprintf("%s_%s", n.Name, name)
+		if !n.Interface {
+			name = fmt.Sprintf("%s_%s", n.Name, name)
+		}
 		receiverName = n.Name
 	}
 
@@ -128,6 +144,21 @@ func (t *Transformer) transformFunc(pkg *Package, f *scanner.Func, names nameSet
 	}
 
 	return rpc
+}
+
+func (t *Transformer) transformInterface(pkg *Package, f *scanner.Interface, names nameSet) *Service {
+	srv := &Service{
+		Name: f.Name,
+	}
+	for _, m := range f.Methods {
+		if rpc := t.transformFunc(pkg, m, names); rpc != nil {
+			srv.RPCs = append(srv.RPCs, rpc)
+		}
+	}
+	if len(srv.RPCs) == 0 {
+		return nil
+	}
+	return srv
 }
 
 func (t *Transformer) transformInputTypes(pkg *Package, types []scanner.Type, names nameSet, name string) Type {

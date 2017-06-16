@@ -32,9 +32,17 @@ func (s *RPCSuite) SetupTest() {
 const expectedImplType = "type Foo struct {\n}"
 
 func (s *RPCSuite) TestDeclImplType() {
-	output, err := render(s.g.declImplType("Foo"))
+	output, err := render(s.g.declServerImplType("Foo", &protobuf.Service{Global: true}))
 	s.Nil(err)
 	s.Equal(expectedImplType, output)
+}
+
+const expectedImplInfType = "type FooSrv struct {\n\tFoo Foo\n}"
+
+func (s *RPCSuite) TestDeclImplInfType() {
+	output, err := render(s.g.declServerImplType("FooSrv", &protobuf.Service{Name: "Foo"}))
+	s.Nil(err)
+	s.Equal(expectedImplInfType, output)
 }
 
 const expectedConstructor = `func NewFoo() *Foo {
@@ -42,9 +50,19 @@ const expectedConstructor = `func NewFoo() *Foo {
 }`
 
 func (s *RPCSuite) TestDeclConstructor() {
-	output, err := render(s.g.declConstructor("Foo", "NewFoo"))
+	output, err := render(s.g.declServerConstructor("Foo", "NewFoo", &protobuf.Service{Global: true}))
 	s.Nil(err)
 	s.Equal(expectedConstructor, output)
+}
+
+const expectedConstructorInf = `func NewFooSrv(s Foo) FooServer {
+	return &FooSrv{Foo: s}
+}`
+
+func (s *RPCSuite) TestDeclConstructorInf() {
+	output, err := render(s.g.declServerConstructor("FooSrv", "NewFooSrv", &protobuf.Service{Name: "Foo"}))
+	s.Nil(err)
+	s.Equal(expectedConstructorInf, output)
 }
 
 const expectedFuncNotGenerated = `func (s *FooServer) DoFoo(ctx xcontext.Context, in *Foo) (result *Bar, err error) {
@@ -297,13 +315,12 @@ func (s *RPCSuite) TestDeclMethod() {
 	}
 
 	ctx := &context{
-		implName: "FooServer",
-		proto:    proto,
-		pkg:      s.fakePkg(),
+		proto: proto,
+		pkg:   s.fakePkg(),
 	}
 
 	for _, c := range cases {
-		output, err := render(s.g.declMethod(ctx, c.rpc))
+		output, err := render(s.g.declServerMethod(ctx, "FooServer", c.rpc))
 		s.Nil(err, c.name, c.name)
 		s.Equal(c.output, output, c.name)
 	}
@@ -313,6 +330,7 @@ const expectedGeneratedFile = `package subpkg
 
 import (
 	xcontext "golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 type subpkgServiceServer struct {
@@ -341,6 +359,80 @@ func (s *subpkgServiceServer) Point_GeneratedMethodOnPointer(ctx xcontext.Contex
 	result = s.Point.GeneratedMethodOnPointer(in.Arg1)
 	return
 }
+
+var _ SvcServer = (*svcServer)(nil)
+
+type svcServer struct {
+	Svc Svc
+}
+
+func NewSvcServer(s Svc) SvcServer {
+	return &svcServer{Svc: s}
+}
+func (s *svcServer) GenArgs(ctx context.Context, in *GenArgsRequest) (result *Point, err error) {
+	result = new(Point)
+	result = s.Svc.GenArgs(in.Arg1, in.Arg2)
+	return
+}
+func (s *svcServer) GenArgsErr(ctx context.Context, in *GenArgsErrRequest) (result *Point, err error) {
+	result = new(Point)
+	result, err = s.Svc.GenArgsErr(in.Arg1, in.Arg2)
+	return
+}
+func (s *svcServer) GenRet(ctx context.Context, in *Point) (result *GenRetResponse, err error) {
+	result = new(GenRetResponse)
+	result.Result1, result.Result2 = s.Svc.GenRet(in)
+	return
+}
+func (s *svcServer) GenRetErr(ctx context.Context, in *Point) (result *GenRetErrResponse, err error) {
+	result = new(GenRetErrResponse)
+	result.Result1, result.Result2, err = s.Svc.GenRetErr(in)
+	return
+}
+func (s *svcServer) GenVar(ctx context.Context, in *GenVarRequest) (result *GenVarResponse, err error) {
+	err = s.Svc.GenVar(in.Arg1, in.Arg2...)
+	return
+}
+func (s *svcServer) Name(ctx context.Context, in *NameRequest) (result *NameResponse, err error) {
+	result = new(NameResponse)
+	result.Result1 = s.Svc.Name()
+	return
+}
+
+var _ Svc = (*svcRemote)(nil)
+
+type svcRemote struct {
+	Svc	SvcClient
+	opts	[]grpc.CallOption
+}
+
+func NewSvcRemote(s SvcClient, opts ...grpc.CallOption) Svc {
+	return &svcRemote{Svc: s, opts: opts}
+}
+func (s *svcRemote) GenArgs(x int, y int) *Point {
+	resp, _ := s.Svc.GenArgs(context.TODO(), &GenArgsRequest{Arg1: x, Arg2: y}, s.opts...)
+	return resp
+}
+func (s *svcRemote) GenArgsErr(x int, y int) (*Point, error) {
+	resp, err := s.Svc.GenArgsErr(context.TODO(), &GenArgsErrRequest{Arg1: x, Arg2: y}, s.opts...)
+	return resp, err
+}
+func (s_ *svcRemote) GenRet(s *Point) (int, int) {
+	resp, _ := s_.Svc.GenRet(context.TODO(), s, s_.opts...)
+	return resp.Result1, resp.Result2
+}
+func (s_ *svcRemote) GenRetErr(s *Point) (int, int, error) {
+	resp, err := s_.Svc.GenRetErr(context.TODO(), s, s_.opts...)
+	return resp.Result1, resp.Result2, err
+}
+func (s_ *svcRemote) GenVar(s string, p ...*Point) error {
+	_, err := s_.Svc.GenVar(context.TODO(), &GenVarRequest{Arg1: s, Arg2: p}, s_.opts...)
+	return err
+}
+func (s *svcRemote) Name() string {
+	resp, _ := s.Svc.Name(context.TODO(), &NameRequest{}, s.opts...)
+	return resp.Result1
+}
 `
 
 func (s *RPCSuite) TestGenerate() {
@@ -359,21 +451,17 @@ func (s *RPCSuite) TestGenerate() {
 
 	data, err := ioutil.ReadFile(projectPath("fixtures/subpkg/server.proteus.go"))
 	s.Nil(err)
-	s.Equal(expectedGeneratedFile, string(data))
+	s.Equal(expectedGeneratedFile, string(data), "%s", data)
 
 	s.Nil(os.Remove(projectPath("fixtures/subpkg/server.proteus.go")))
 }
 
 func TestServiceImplName(t *testing.T) {
-	require.Equal(t, "fooServiceServer", serviceImplName(&protobuf.Package{
-		Name: "foo",
-	}))
+	require.Equal(t, "fooServer", serverImplName("foo"))
 }
 
 func TestConstructorName(t *testing.T) {
-	require.Equal(t, "NewFooServiceServer", constructorName(&protobuf.Package{
-		Name: "foo",
-	}))
+	require.Equal(t, "NewFooServer", serverConstructorName("foo"))
 }
 
 const testPkg = `package fake
@@ -435,10 +523,14 @@ func notNullable(t protobuf.Type) protobuf.Type {
 	return t
 }
 
-func render(decl ast.Decl) (string, error) {
+func render(decl ...ast.Decl) (string, error) {
+	fs := token.NewFileSet()
 	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, token.NewFileSet(), decl); err != nil {
-		return "", err
+
+	for _, d := range decl {
+		if err := printer.Fprint(&buf, fs, d); err != nil {
+			return "", err
+		}
 	}
 
 	return buf.String(), nil

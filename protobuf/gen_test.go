@@ -185,9 +185,10 @@ const expectedService = `service BarService {
 `
 
 func (s *GenSuite) TestWriteService() {
-	writeService(s.buf, &Package{
-		Name: "foo.bar",
-		RPCs: mockRpcs,
+	writeService(s.buf, &Service{
+		Name:   "BarService",
+		Global: true,
+		RPCs:   mockRpcs,
 	})
 	s.Equal(expectedService, s.buf.String())
 }
@@ -210,7 +211,9 @@ func (s *GenSuite) TestGenerate() {
 		Messages: []*Message{mockMsg},
 		Enums:    []*Enum{mockEnum},
 		Options:  Options{"foo": NewLiteralValue("true")},
-		RPCs:     mockRpcs,
+		Services: []*Service{
+			{Name: "BarService", Global: true, RPCs: mockRpcs},
+		},
 	})
 	s.Nil(err)
 

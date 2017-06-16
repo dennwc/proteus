@@ -100,7 +100,7 @@ func (s *ResolverSuite) TestIsCustomType() {
 	}
 
 	for _, c := range cases {
-		s.Equal(c.result, s.r.isCustomType(&scanner.Named{nil, c.path, c.name}), "%s.%s", c.path, c.name)
+		s.Equal(c.result, s.r.isCustomType(&scanner.Named{nil, c.path, c.name, false}), "%s.%s", c.path, c.name)
 	}
 }
 
@@ -200,7 +200,7 @@ func (s *ResolverSuite) TestResolve() {
 		},
 		Output: []scanner.Type{
 			scanner.NewBasic("bool"),
-			scanner.NewNamed("", "error"),
+			scanner.NewNamedInterface("", "error"),
 		},
 	}, findFuncByName("Generated", pkgs[1].Funcs))
 

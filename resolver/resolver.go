@@ -63,6 +63,16 @@ func (r *Resolver) resolvePackage(p *scanner.Package, info *packagesInfo) {
 	}
 	p.Funcs = funcs
 
+	var infs = make([]*scanner.Interface, 0, len(p.Funcs))
+	for _, inf := range p.Interfaces {
+		if r.resolveInterface(inf, info) {
+			infs = append(infs, inf)
+		} else {
+			report.Warn("interface %s had an unresolvable type and it will not be generated", inf.Name)
+		}
+	}
+	p.Interfaces = infs
+
 	r.removeUnmarkedStructs(p, info)
 	p.Resolved = true
 }
@@ -79,6 +89,17 @@ func (r *Resolver) resolveFunc(f *scanner.Func, info *packagesInfo) bool {
 	}
 
 	return true
+}
+
+func (r *Resolver) resolveInterface(inf *scanner.Interface, info *packagesInfo) bool {
+	fncs := make([]*scanner.Func, 0, len(inf.Methods))
+	for _, m := range inf.Methods {
+		if r.resolveFunc(m, info) {
+			fncs = append(fncs, m)
+		}
+	}
+	inf.Methods = fncs
+	return len(fncs) != 0
 }
 
 func (r *Resolver) resolveTypeList(types []scanner.Type, info *packagesInfo) []scanner.Type {

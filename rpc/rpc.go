@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,8 +58,8 @@ func NewGenerator() *Generator {
 // Generate creates a new file in the package at the given path and implements
 // the server according to the given proto package.
 func (g *Generator) Generate(proto *protobuf.Package, path string) error {
-	if len(proto.RPCs) == 0 {
-		report.Warn("no RPCs in the given proto file, not generating anything")
+	if len(proto.Services) == 0 {
+		report.Warn("no Services in the given proto file, not generating anything")
 		return nil
 	}
 
@@ -78,70 +79,166 @@ func (g *Generator) Generate(proto *protobuf.Package, path string) error {
 	}
 
 	ctx := &context{
-		implName:        serviceImplName(proto),
-		constructorName: constructorName(proto),
-		proto:           proto,
-		pkg:             pkg,
+		proto: proto,
+		pkg:   pkg,
 	}
 
 	var decls []ast.Decl
-	if !ctx.isNameDefined(ctx.implName) {
-		decls = append(decls, g.declImplType(ctx.implName))
-	}
-
-	if !ctx.isNameDefined(ctx.constructorName) {
-		report.Warn("constructor %s for service %s is not implemented", ctx.implName, ctx.constructorName)
-		decls = append(decls, g.declConstructor(ctx.implName, ctx.constructorName))
-	}
-
-	for _, rpc := range proto.RPCs {
-		decls = append(decls, g.declMethod(ctx, rpc))
+	for _, svc := range proto.Services {
+		decls = append(decls, g.declServer(ctx, svc)...)
+		if !svc.Global { // no client for global services
+			decls = append(decls, g.declClient(ctx, svc)...)
+		}
 	}
 
 	return g.writeFile(g.buildFile(ctx, decls), path)
 }
+func (g *Generator) declServer(ctx *context, svc *protobuf.Service) []ast.Decl {
+	var decls []ast.Decl
 
-func (g *Generator) declImplType(implName string) ast.Decl {
-	return &ast.GenDecl{
-		Tok: token.TYPE,
-		Specs: []ast.Spec{
-			&ast.TypeSpec{
-				Name: ast.NewIdent(implName),
-				Type: &ast.StructType{
-					Fields: fields(),
-				},
-			},
-		},
+	iname := serverImplName(svc.Name)
+
+	if !svc.Global {
+		decls = append(decls, staticInfCheck(serverInfName(svc.Name), iname))
 	}
+	if !ctx.isNameDefined(iname) {
+		decls = append(decls, g.declServerImplType(iname, svc))
+	}
+	if name := serverConstructorName(svc.Name); !ctx.isNameDefined(name) {
+		report.Warn("constructor %s for service %s is not implemented", iname, name)
+		decls = append(decls, g.declServerConstructor(iname, name, svc))
+	}
+
+	for _, rpc := range svc.RPCs {
+		decls = append(decls, g.declServerMethod(ctx, iname, rpc))
+	}
+	return decls
+}
+func (g *Generator) declClient(ctx *context, svc *protobuf.Service) []ast.Decl {
+	var decls []ast.Decl
+
+	iname := clientImplName(svc.Name)
+
+	decls = append(decls, staticInfCheck(svc.Name, iname))
+
+	if !ctx.isNameDefined(iname) {
+		decls = append(decls, g.declClientImplType(ctx, iname, svc))
+	}
+	if name := clientConstructorName(svc.Name); !ctx.isNameDefined(name) {
+		report.Warn("constructor %s for service %s is not implemented", iname, name)
+		decls = append(decls, g.declClientConstructor(ctx, iname, name, svc))
+	}
+
+	for _, rpc := range svc.RPCs {
+		decls = append(decls, g.declClientMethod(ctx, iname, rpc))
+	}
+	return decls
 }
 
-func (g *Generator) declConstructor(implName, constructorName string) ast.Decl {
-	return &ast.FuncDecl{
-		Name: ast.NewIdent(constructorName),
-		Type: &ast.FuncType{
-			Params: fields(),
-			Results: fields(&ast.Field{
-				Type: ptr(ast.NewIdent(implName)),
-			}),
-		},
-		Body: &ast.BlockStmt{
-			List: []ast.Stmt{
-				&ast.ReturnStmt{
-					Results: []ast.Expr{
-						&ast.UnaryExpr{
-							Op: token.AND,
-							X: &ast.CompositeLit{
-								Type: ast.NewIdent(implName),
-							},
-						},
-					},
-				},
-			},
-		},
+func (g *Generator) declServerTypeAssert(implName string, svc *protobuf.Service) ast.Decl {
+	var flds *ast.FieldList
+	if svc.Global {
+		flds = fields()
+	} else {
+		flds = fields(&ast.Field{
+			Names: idents(svc.Name),
+			Type:  ast.NewIdent(svc.Name),
+		})
 	}
+	return typeDecl(implName, &ast.StructType{
+		Fields: flds,
+	})
 }
 
-func (g *Generator) genMethodType(ctx *context, rpc *protobuf.RPC) *ast.FuncType {
+func (g *Generator) declServerImplType(implName string, svc *protobuf.Service) ast.Decl {
+	var flds *ast.FieldList
+	if svc.Global {
+		flds = fields()
+	} else {
+		flds = fields(&ast.Field{
+			Names: idents(svc.Name),
+			Type:  ast.NewIdent(svc.Name),
+		})
+	}
+	return typeDecl(implName, &ast.StructType{
+		Fields: flds,
+	})
+}
+
+const fieldNameOpts = "opts"
+
+func (g *Generator) declClientImplType(ctx *context, implName string, svc *protobuf.Service) ast.Decl {
+	return typeDecl(implName, &ast.StructType{
+		Fields: fields(&ast.Field{
+			Names: idents(svc.Name),
+			Type:  ast.NewIdent(clientInfName(svc.Name)),
+		}, &ast.Field{
+			Names: idents(fieldNameOpts),
+			Type:  &ast.ArrayType{Elt: g.packageSelector(ctx, grpcImport, "grpc", "CallOption")},
+		}),
+	})
+}
+
+func (g *Generator) declServerConstructor(implName, constructorName string, svc *protobuf.Service) ast.Decl {
+	var (
+		params  *ast.FieldList
+		results *ast.FieldList
+		elems   []ast.Expr
+	)
+	if svc.Global {
+		params = fields()
+		results = fields(&ast.Field{
+			Type: ptr(ast.NewIdent(implName)),
+		})
+	} else {
+		params = fields(&ast.Field{
+			Names: idents("s"),
+			Type:  ast.NewIdent(svc.Name),
+		})
+		results = fields(&ast.Field{
+			Type: ast.NewIdent(serverInfName(svc.Name)),
+		})
+		elems = []ast.Expr{
+			&ast.KeyValueExpr{
+				Key:   ast.NewIdent(svc.Name),
+				Value: ast.NewIdent("s"),
+			},
+		}
+	}
+	return simpleConstructor(constructorName, params, results, addr(&ast.CompositeLit{
+		Type: ast.NewIdent(implName),
+		Elts: elems,
+	}))
+}
+
+func (g *Generator) packageSelector(ctx *context, imp, pkg, name string) ast.Expr {
+	ctx.addImport(imp)
+	return packageSelector(pkg, name)
+}
+
+const grpcImport = "google.golang.org/grpc"
+
+func (g *Generator) declClientConstructor(ctx *context, implName, constructorName string, svc *protobuf.Service) ast.Decl {
+	return simpleConstructor(constructorName, fields(&ast.Field{
+		Names: idents("s"),
+		Type:  ast.NewIdent(clientInfName(svc.Name)),
+	}, &ast.Field{
+		Names: idents("opts"),
+		Type: &ast.Ellipsis{
+			Elt: g.packageSelector(ctx, grpcImport, "grpc", "CallOption"),
+		},
+	}), fields(&ast.Field{ // return type
+		Type: ast.NewIdent(svc.Name),
+	}), addr(&ast.CompositeLit{ // results
+		Type: ast.NewIdent(implName),
+		Elts: []ast.Expr{
+			kv(svc.Name, "s"),
+			kv(fieldNameOpts, "opts"),
+		},
+	}))
+}
+
+func (g *Generator) genServerMethodType(ctx *context, rpc *protobuf.RPC) *ast.FuncType {
 	var in, out string
 
 	if isGenerated(rpc.Input) {
@@ -168,11 +265,61 @@ func (g *Generator) genMethodType(ctx *context, rpc *protobuf.RPC) *ast.FuncType
 	}
 }
 
-func (g *Generator) genMethodCall(ctx *context, rpc *protobuf.RPC) ast.Expr {
-	call := &ast.CallExpr{Fun: ast.NewIdent(rpc.Method)}
-	if rpc.Recv != "" {
-		call.Fun = ast.NewIdent(fmt.Sprintf("s.%s.%s", rpc.Recv, rpc.Method))
+func typeToExpr(t types.Type) ast.Expr {
+	switch vt := t.(type) {
+	case *types.Named:
+		return ast.NewIdent(vt.Obj().Name())
+	case *types.Basic:
+		return ast.NewIdent(vt.Name())
+	case *types.Pointer:
+		return &ast.StarExpr{X: typeToExpr(vt.Elem())}
+	case *types.Slice:
+		return &ast.ArrayType{Elt: typeToExpr(vt.Elem())}
+	default:
+		panic(fmt.Errorf("unsupported type: %T", vt))
 	}
+}
+
+func (g *Generator) tupleToFields(tu *types.Tuple, names bool) []*ast.Field {
+	var out []*ast.Field
+	for i := 0; i < tu.Len(); i++ {
+		v := tu.At(i)
+		name := ""
+		if names {
+			name = v.Name()
+		}
+		out = append(out, field(name, typeToExpr(v.Type())))
+	}
+	return out
+}
+
+func (g *Generator) genClientMethodType(ctx *context, rpc *protobuf.RPC) *ast.FuncType {
+	signature := ctx.findSignature(rpc)
+	typ := &ast.FuncType{
+		Params: fields(g.tupleToFields(signature.Params(), true)...),
+		// do not save return parameter names to prevent name collisions
+		Results: fields(g.tupleToFields(signature.Results(), false)...),
+	}
+	if rpc.IsVariadic {
+		i := len(typ.Params.List) - 1
+		typ.Params.List[i].Type = &ast.Ellipsis{Elt: typ.Params.List[i].Type.(*ast.ArrayType).Elt}
+	}
+	return typ
+}
+
+func rpcFuncName(recv string, rpc *protobuf.RPC) ast.Expr {
+	if rpc.Recv != "" {
+		return ast.NewIdent(fmt.Sprintf("%s.%s.%s", recv, rpc.Recv, rpc.Method))
+	}
+	return ast.NewIdent(rpc.Method)
+}
+
+func genMsgReqFieldName(i int) string {
+	return fmt.Sprintf("Arg%d", i+1)
+}
+
+func (g *Generator) genServerMethodCall(ctx *context, rpc *protobuf.RPC) ast.Expr {
+	call := &ast.CallExpr{Fun: rpcFuncName(methRecvName, rpc)}
 
 	if rpc.HasCtx {
 		call.Args = append(call.Args, ast.NewIdent("ctx"))
@@ -192,9 +339,7 @@ func (g *Generator) genMethodCall(ctx *context, rpc *protobuf.RPC) ast.Expr {
 	} else {
 		msg := ctx.findMessage(typeName(rpc.Input))
 		for i := range msg.Fields {
-			call.Args = append(call.Args, ast.NewIdent(fmt.Sprintf(
-				"in.Arg%d", i+1,
-			)))
+			call.Args = append(call.Args, ast.NewIdent("in."+genMsgReqFieldName(i)))
 		}
 	}
 
@@ -208,19 +353,17 @@ func (g *Generator) genBaseMethodBody(methodType *ast.FuncType) *ast.BlockStmt {
 				Tok: token.ASSIGN,
 				Lhs: []ast.Expr{ast.NewIdent("result")},
 				Rhs: []ast.Expr{
-					&ast.CallExpr{
-						Fun: ast.NewIdent("new"),
-						Args: []ast.Expr{
-							methodType.Results.List[0].Type.(*ast.StarExpr).X,
-						},
-					},
+					call(
+						ast.NewIdent("new"),
+						methodType.Results.List[0].Type.(*ast.StarExpr).X,
+					),
 				},
 			},
 		},
 	}
 }
 
-func (g *Generator) genMethodBody(ctx *context, rpc *protobuf.RPC, typ *ast.FuncType) *ast.BlockStmt {
+func (g *Generator) genServerMethodBody(ctx *context, rpc *protobuf.RPC, typ *ast.FuncType) *ast.BlockStmt {
 	if !isGenerated(rpc.Output) {
 		return g.genMethodBodyForNotGeneratedOutput(ctx, rpc, typ)
 	} else {
@@ -228,15 +371,116 @@ func (g *Generator) genMethodBody(ctx *context, rpc *protobuf.RPC, typ *ast.Func
 	}
 }
 
+func flatFieldNames(args []*ast.Field) []*ast.Ident {
+	var arr []*ast.Ident
+	for _, arg := range args {
+		for _, name := range arg.Names {
+			arr = append(arr, name)
+		}
+	}
+	return arr
+}
+
+func newMessage(ctx *context, in protobuf.Type, args []*ast.Field) ast.Expr {
+	if !isGenerated(in) && len(args) == 1 {
+		return args[0].Names[0]
+	}
+	typ := typeName(in)
+	msg := ctx.findMessage(typ)
+	var elts []ast.Expr
+	names := flatFieldNames(args)
+	for i := range msg.Fields {
+		elts = append(elts, &ast.KeyValueExpr{
+			Key:   ast.NewIdent(genMsgReqFieldName(i)),
+			Value: names[i],
+		})
+	}
+	return addr(&ast.CompositeLit{
+		Type: ast.NewIdent(typ),
+		Elts: elts,
+	})
+}
+
+func fromMessage(ctx *context, in protobuf.Type, out []*ast.Field) []ast.Expr {
+	if !isGenerated(in) && len(out) == 1 {
+		return []ast.Expr{ast.NewIdent("resp")}
+	}
+	typ := typeName(in)
+	msg := ctx.findMessage(typ)
+	var elts []ast.Expr
+	for i := range msg.Fields {
+		elts = append(elts, &ast.SelectorExpr{
+			X:   ast.NewIdent("resp"),
+			Sel: ast.NewIdent(genMsgRespFieldName(i)),
+		})
+	}
+	return elts
+}
+
+func (g *Generator) genClientMethodBody(ctx *context, recv string, rpc *protobuf.RPC, typ *ast.FuncType) *ast.BlockStmt {
+	in := typ.Params.List
+	var (
+		lhs [2]ast.Expr
+		rhs [3]ast.Expr
+	)
+	// first argument is context
+	if false { // TODO(dennwc): handle context, once merged
+		rhs[0] = ast.NewIdent(in[0].Names[0].Name)
+		in = in[1:]
+	} else {
+		rhs[0] = call(packageSelector("context", "TODO"))
+	}
+	// second is the message
+	rhs[1] = newMessage(ctx, rpc.Input, in)
+	// third one is RPC options
+	rhs[2] = &ast.SelectorExpr{X: ast.NewIdent(recv), Sel: ast.NewIdent(fieldNameOpts)}
+
+	out := typ.Results.List
+	lhs[0] = ast.NewIdent("resp")
+	if rpc.HasError {
+		lhs[1] = ast.NewIdent("err")
+		out = out[:len(out)-1]
+	} else {
+		lhs[1] = ast.NewIdent("_")
+	}
+	results := fromMessage(ctx, rpc.Output, out)
+	if len(results) == 0 {
+		lhs[0] = ast.NewIdent("_")
+	}
+	if rpc.HasError {
+		results = append(results, ast.NewIdent("err"))
+	}
+
+	tok := token.DEFINE
+	if len(results) == 0 {
+		tok = token.ASSIGN
+	}
+	var body []ast.Stmt
+	// RPC call
+	body = append(body, &ast.AssignStmt{
+		Tok: tok,
+		Lhs: lhs[:],
+		Rhs: []ast.Expr{
+			callVar(rpcFuncName(recv, rpc), rhs[:]...),
+		},
+	})
+	if len(results) > 0 {
+		body = append(body, &ast.ReturnStmt{Results: results})
+	}
+	return &ast.BlockStmt{List: body}
+}
+
+func genMsgRespFieldName(i int) string {
+	return fmt.Sprintf("Result%d", i+1)
+}
+
 func (g *Generator) genMethodBodyAssignmentsForGeneratedOutput(ctx *context, rpc *protobuf.RPC, msg *protobuf.Message) (lhs []ast.Expr) {
 	for i, f := range msg.Fields {
-		if f == nil {
-			lhs = append(lhs, ast.NewIdent("_"))
-		} else {
-			lhs = append(lhs, ast.NewIdent(fmt.Sprintf(
-				"result.Result%d", i+1,
-			)))
+		name := "_"
+		if f != nil {
+			name = "result." + genMsgRespFieldName(i)
 		}
+		lhs = append(lhs, ast.NewIdent(name))
 	}
 	return
 }
@@ -253,7 +497,7 @@ func emptyBodyForMethodCall(body *ast.BlockStmt, methodCall ast.Expr) *ast.Block
 
 func (g *Generator) genMethodBodyForGeneratedOutput(ctx *context, rpc *protobuf.RPC, typ *ast.FuncType) *ast.BlockStmt {
 	body := g.genBaseMethodBody(typ)
-	methodCall := g.genMethodCall(ctx, rpc)
+	methodCall := g.genServerMethodCall(ctx, rpc)
 	call := &ast.AssignStmt{
 		Tok: token.ASSIGN,
 		Rhs: []ast.Expr{methodCall},
@@ -281,7 +525,7 @@ func (g *Generator) genMethodBodyForGeneratedOutput(ctx *context, rpc *protobuf.
 
 func (g *Generator) genMethodBodyForNotGeneratedOutput(ctx *context, rpc *protobuf.RPC, typ *ast.FuncType) *ast.BlockStmt {
 	body := g.genBaseMethodBody(typ)
-	methodCall := g.genMethodCall(ctx, rpc)
+	methodCall := g.genServerMethodCall(ctx, rpc)
 	call := &ast.AssignStmt{Tok: token.ASSIGN}
 
 	needToAddressOutput := !isGenerated(rpc.Output) && !rpc.Output.IsNullable()
@@ -317,13 +561,40 @@ func (g *Generator) genMethodBodyForNotGeneratedOutput(ctx *context, rpc *protob
 	return body
 }
 
-func (g *Generator) declMethod(ctx *context, rpc *protobuf.RPC) ast.Decl {
-	typ := g.genMethodType(ctx, rpc)
+const methRecvName = "s"
+
+func (g *Generator) declServerMethod(ctx *context, iname string, rpc *protobuf.RPC) ast.Decl {
+	typ := g.genServerMethodType(ctx, rpc)
 	return &ast.FuncDecl{
-		Recv: fields(field("s", ptr(ast.NewIdent(ctx.implName)))),
+		Recv: fields(field(methRecvName, ptr(ast.NewIdent(iname)))),
 		Name: ast.NewIdent(rpc.Name),
 		Type: typ,
-		Body: g.genMethodBody(ctx, rpc, typ),
+		Body: g.genServerMethodBody(ctx, rpc, typ),
+	}
+}
+
+func hasFieldWithName(name string, fld []*ast.Field) bool {
+	for _, f := range fld {
+		for _, n := range f.Names {
+			if name == n.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (g *Generator) declClientMethod(ctx *context, iname string, rpc *protobuf.RPC) ast.Decl {
+	typ := g.genClientMethodType(ctx, rpc)
+	recv := methRecvName
+	if hasFieldWithName(recv, typ.Params.List) {
+		recv += "_"
+	}
+	return &ast.FuncDecl{
+		Recv: fields(field(recv, ptr(ast.NewIdent(iname)))),
+		Name: ast.NewIdent(rpc.Name),
+		Type: typ,
+		Body: g.genClientMethodBody(ctx, recv, rpc, typ),
 	}
 }
 
@@ -393,9 +664,63 @@ func newNamedImport(name, path string) *ast.ImportSpec {
 	}
 }
 
+// staticInfCheck declares a static check for type to implement an interface.
+func staticInfCheck(inf, typ string) ast.Decl {
+	return &ast.GenDecl{
+		Tok: token.VAR,
+		Specs: []ast.Spec{
+			&ast.ValueSpec{
+				Names: idents("_"),
+				Type:  ast.NewIdent(inf),
+				Values: []ast.Expr{
+					&ast.CallExpr{
+						Fun: &ast.ParenExpr{
+							X: &ast.StarExpr{X: ast.NewIdent(typ)},
+						},
+						Args: []ast.Expr{ast.NewIdent("nil")},
+					},
+				},
+			},
+		},
+	}
+}
+
+func simpleConstructor(name string, in, out *ast.FieldList, results ...ast.Expr) ast.Decl {
+	return &ast.FuncDecl{
+		Name: ast.NewIdent(name),
+		Type: &ast.FuncType{
+			Params:  in,
+			Results: out,
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.ReturnStmt{
+					Results: results,
+				},
+			},
+		},
+	}
+}
+
+func typeDecl(name string, t ast.Expr) ast.Decl {
+	return &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{
+				Name: ast.NewIdent(name),
+				Type: t,
+			},
+		},
+	}
+}
+
 func field(name string, typ ast.Expr) *ast.Field {
+	var names []*ast.Ident
+	if name != "" {
+		names = idents(name)
+	}
 	return &ast.Field{
-		Names: []*ast.Ident{ast.NewIdent(name)},
+		Names: names,
 		Type:  typ,
 	}
 }
@@ -404,8 +729,51 @@ func fields(fields ...*ast.Field) *ast.FieldList {
 	return &ast.FieldList{List: fields}
 }
 
+func call(fun ast.Expr, args ...ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  fun,
+		Args: args,
+	}
+}
+
+func callVar(fun ast.Expr, args ...ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:      fun,
+		Args:     args,
+		Ellipsis: token.Pos(1),
+	}
+}
+func packageSelector(pkg, name string) ast.Expr {
+	return &ast.SelectorExpr{
+		X:   ast.NewIdent(pkg),
+		Sel: ast.NewIdent(name),
+	}
+}
+
 func ptr(expr ast.Expr) ast.Expr {
 	return &ast.StarExpr{X: expr}
+}
+
+func addr(expr ast.Expr) ast.Expr {
+	return &ast.UnaryExpr{
+		Op: token.AND,
+		X:  expr,
+	}
+}
+
+func idents(names ...string) []*ast.Ident {
+	arr := make([]*ast.Ident, 0, len(names))
+	for _, name := range names {
+		arr = append(arr, ast.NewIdent(name))
+	}
+	return arr
+}
+
+func kv(k, v string) ast.Expr {
+	return &ast.KeyValueExpr{
+		Key:   ast.NewIdent(k),
+		Value: ast.NewIdent(v),
+	}
 }
 
 var goSrc = filepath.Join(os.Getenv("GOPATH"), "src")
