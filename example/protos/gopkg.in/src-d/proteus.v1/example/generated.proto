@@ -88,6 +88,42 @@ message RandomNumberResponse {
 	double result1 = 1;
 }
 
+message GetAlphaTimeIRequest {
+}
+
+message GetDurationForLengthCtxIRequest {
+	int64 arg1 = 1;
+}
+
+message GetDurationForLengthIRequest {
+	int64 arg1 = 1;
+}
+
+message GetOmegaTimeIRequest {
+}
+
+message GetPhoneIRequest {
+}
+
+message RandomBoolIRequest {
+}
+
+message RandomBoolIResponse {
+	bool result1 = 1;
+}
+
+message RandomCategoryIRequest {
+}
+
+message RandomNumberIRequest {
+	double arg1 = 1;
+	double arg2 = 2;
+}
+
+message RandomNumberIResponse {
+	double result1 = 1;
+}
+
 // Type will be transformed into an enum.
 enum Type {
 	option (gogoproto.enumdecl) = false;
@@ -106,5 +142,16 @@ service ExampleService {
 	rpc GetPhone (gopkg.in.srcd.proteus.v1.example.GetPhoneRequest) returns (gopkg.in.srcd.proteus.v1.example.Product);
 	rpc RandomCategory (gopkg.in.srcd.proteus.v1.example.RandomCategoryRequest) returns (gopkg.in.srcd.proteus.v1.example.categories.CategoryOptions);
 	rpc RandomNumber (gopkg.in.srcd.proteus.v1.example.RandomNumberRequest) returns (gopkg.in.srcd.proteus.v1.example.RandomNumberResponse);
+}
+
+service Random {
+	rpc GetAlphaTimeI (gopkg.in.srcd.proteus.v1.example.GetAlphaTimeIRequest) returns (gopkg.in.srcd.proteus.v1.example.MyTime);
+	rpc GetDurationForLengthCtxI (gopkg.in.srcd.proteus.v1.example.GetDurationForLengthCtxIRequest) returns (gopkg.in.srcd.proteus.v1.example.MyDuration);
+	rpc GetDurationForLengthI (gopkg.in.srcd.proteus.v1.example.GetDurationForLengthIRequest) returns (gopkg.in.srcd.proteus.v1.example.MyDuration);
+	rpc GetOmegaTimeI (gopkg.in.srcd.proteus.v1.example.GetOmegaTimeIRequest) returns (gopkg.in.srcd.proteus.v1.example.MyTime);
+	rpc GetPhoneI (gopkg.in.srcd.proteus.v1.example.GetPhoneIRequest) returns (gopkg.in.srcd.proteus.v1.example.Product);
+	rpc RandomBoolI (gopkg.in.srcd.proteus.v1.example.RandomBoolIRequest) returns (gopkg.in.srcd.proteus.v1.example.RandomBoolIResponse);
+	rpc RandomCategoryI (gopkg.in.srcd.proteus.v1.example.RandomCategoryIRequest) returns (gopkg.in.srcd.proteus.v1.example.categories.CategoryOptions);
+	rpc RandomNumberI (gopkg.in.srcd.proteus.v1.example.RandomNumberIRequest) returns (gopkg.in.srcd.proteus.v1.example.RandomNumberIResponse);
 }
 

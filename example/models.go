@@ -8,7 +8,7 @@ import (
 	"gopkg.in/src-d/proteus.v1/example/categories"
 )
 
-//go:generate proteus -p gopkg.in/src-d/proteus.v1/example -f $GOPATH/src/gopkg.in/src-d/proteus.v1/example/protos
+//go:generate proteus -verbose -p gopkg.in/src-d/proteus.v1/example -f $GOPATH/src/gopkg.in/src-d/proteus.v1/example/protos
 
 //proteus:generate
 type Product struct {
@@ -171,3 +171,18 @@ func GetPhone() *Product {
 func RandomBool() bool {
 	return true // Truly random. Selected by flipping a coin... once.
 }
+
+//proteus:generate
+type Random interface {
+	RandomNumberI(mean, std float64) float64
+	RandomCategoryI() categories.CategoryOptions
+	GetAlphaTimeI() MyTime
+	GetOmegaTimeI() (*MyTime, error)
+	GetDurationForLengthI(meters int64) *MyDuration
+	GetDurationForLengthCtxI(ctx context.Context, meters int64) (*MyDuration, error)
+	GetPhoneI() *Product
+	RandomBoolI() bool
+}
+
+//proteus:generate
+type EmptyService interface{}

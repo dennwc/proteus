@@ -13,6 +13,7 @@ type Package struct {
 	Resolved   bool
 	Path       string
 	Name       string
+	Import     []*Import
 	Structs    []*Struct
 	Enums      []*Enum
 	Funcs      []*Func
@@ -274,6 +275,12 @@ func (d *Docs) SetDocs(comments *ast.CommentGroup) {
 			(&ast.CommentGroup{List: list}).Text(),
 		), "\n")
 	}
+}
+
+// Import is a package import statement.
+type Import struct {
+	Name string
+	Path string
 }
 
 // Enum consists of a list of possible values.

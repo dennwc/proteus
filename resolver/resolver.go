@@ -194,6 +194,9 @@ func getPackagesInfo(pkgs []*scanner.Package) *packagesInfo {
 
 	for _, p := range pkgs {
 		result.packages[p.Path] = struct{}{}
+		for _, imp := range p.Import {
+			result.packages[imp.Path] = struct{}{}
+		}
 		for n, t := range p.Aliases {
 			if _, ok := enums[n]; !ok {
 				result.aliases[n] = t

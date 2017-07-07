@@ -51,7 +51,7 @@ func (c *MyContainer) Name() string {
 
 // Svc ...
 //proteus:generate
-type Svc interface{
+type Svc interface {
 	Name() string
 	GenArgs(x, y int) *Point
 	GenArgsErr(x, y int) (*Point, error)

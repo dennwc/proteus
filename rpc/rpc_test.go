@@ -331,6 +331,7 @@ const expectedGeneratedFile = `package subpkg
 import (
 	xcontext "golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"context"
 )
 
 type subpkgServiceServer struct {
@@ -369,31 +370,31 @@ type svcServer struct {
 func NewSvcServer(s Svc) SvcServer {
 	return &svcServer{Svc: s}
 }
-func (s *svcServer) GenArgs(ctx context.Context, in *GenArgsRequest) (result *Point, err error) {
+func (s *svcServer) GenArgs(ctx xcontext.Context, in *GenArgsRequest) (result *Point, err error) {
 	result = new(Point)
 	result = s.Svc.GenArgs(in.Arg1, in.Arg2)
 	return
 }
-func (s *svcServer) GenArgsErr(ctx context.Context, in *GenArgsErrRequest) (result *Point, err error) {
+func (s *svcServer) GenArgsErr(ctx xcontext.Context, in *GenArgsErrRequest) (result *Point, err error) {
 	result = new(Point)
 	result, err = s.Svc.GenArgsErr(in.Arg1, in.Arg2)
 	return
 }
-func (s *svcServer) GenRet(ctx context.Context, in *Point) (result *GenRetResponse, err error) {
+func (s *svcServer) GenRet(ctx xcontext.Context, in *Point) (result *GenRetResponse, err error) {
 	result = new(GenRetResponse)
 	result.Result1, result.Result2 = s.Svc.GenRet(in)
 	return
 }
-func (s *svcServer) GenRetErr(ctx context.Context, in *Point) (result *GenRetErrResponse, err error) {
+func (s *svcServer) GenRetErr(ctx xcontext.Context, in *Point) (result *GenRetErrResponse, err error) {
 	result = new(GenRetErrResponse)
 	result.Result1, result.Result2, err = s.Svc.GenRetErr(in)
 	return
 }
-func (s *svcServer) GenVar(ctx context.Context, in *GenVarRequest) (result *GenVarResponse, err error) {
+func (s *svcServer) GenVar(ctx xcontext.Context, in *GenVarRequest) (result *GenVarResponse, err error) {
 	err = s.Svc.GenVar(in.Arg1, in.Arg2...)
 	return
 }
-func (s *svcServer) Name(ctx context.Context, in *NameRequest) (result *NameResponse, err error) {
+func (s *svcServer) Name(ctx xcontext.Context, in *NameRequest) (result *NameResponse, err error) {
 	result = new(NameResponse)
 	result.Result1 = s.Svc.Name()
 	return

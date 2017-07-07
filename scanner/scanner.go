@@ -111,6 +111,17 @@ func (s *Scanner) scanPackage(p string) (*Package, error) {
 	return buildPackage(ctx, pkg)
 }
 
+func importsProtobuf(p *types.Package) bool {
+	for _, imp := range p.Imports() {
+		switch removeGoPath(imp) {
+		case "github.com/golang/protobuf/proto",
+			"github.com/gogo/protobuf/gogoproto":
+			return true
+		}
+	}
+	return false
+}
+
 func buildPackage(ctx *context, gopkg *types.Package) (*Package, error) {
 	objs := objectsInScope(gopkg.Scope())
 
@@ -119,7 +130,14 @@ func buildPackage(ctx *context, gopkg *types.Package) (*Package, error) {
 		Name:    gopkg.Name(),
 		Aliases: make(map[string]Type),
 	}
-
+	for _, imp := range gopkg.Imports() {
+		if importsProtobuf(imp) {
+			pkg.Import = append(pkg.Import, &Import{
+				Name: imp.Name(),
+				Path: removeGoPath(imp),
+			})
+		}
+	}
 	for _, o := range objs {
 		if err := pkg.scanObject(ctx, o); err != nil {
 			return nil, err

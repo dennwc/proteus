@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/src-d/proteus.v1/protobuf"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/src-d/proteus.v1/protobuf"
 
 	"gopkg.in/src-d/go-parse-utils.v1"
 )

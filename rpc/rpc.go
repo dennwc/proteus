@@ -265,22 +265,30 @@ func (g *Generator) genServerMethodType(ctx *context, rpc *protobuf.RPC) *ast.Fu
 	}
 }
 
-func typeToExpr(t types.Type) ast.Expr {
+func typeToExpr(ctx *context, t types.Type) ast.Expr {
 	switch vt := t.(type) {
 	case *types.Named:
-		return ast.NewIdent(vt.Obj().Name())
+		o := vt.Obj()
+		name := ast.NewIdent(o.Name())
+		if p := o.Pkg(); p != nil && p != ctx.pkg {
+			return &ast.SelectorExpr{
+				X:   ast.NewIdent(p.Name()),
+				Sel: name,
+			}
+		}
+		return name
 	case *types.Basic:
 		return ast.NewIdent(vt.Name())
 	case *types.Pointer:
-		return &ast.StarExpr{X: typeToExpr(vt.Elem())}
+		return &ast.StarExpr{X: typeToExpr(ctx, vt.Elem())}
 	case *types.Slice:
-		return &ast.ArrayType{Elt: typeToExpr(vt.Elem())}
+		return &ast.ArrayType{Elt: typeToExpr(ctx, vt.Elem())}
 	default:
 		panic(fmt.Errorf("unsupported type: %T", vt))
 	}
 }
 
-func (g *Generator) tupleToFields(tu *types.Tuple, names bool) []*ast.Field {
+func (g *Generator) tupleToFields(ctx *context, tu *types.Tuple, names bool) []*ast.Field {
 	var out []*ast.Field
 	for i := 0; i < tu.Len(); i++ {
 		v := tu.At(i)
@@ -288,7 +296,7 @@ func (g *Generator) tupleToFields(tu *types.Tuple, names bool) []*ast.Field {
 		if names {
 			name = v.Name()
 		}
-		out = append(out, field(name, typeToExpr(v.Type())))
+		out = append(out, field(name, typeToExpr(ctx, v.Type())))
 	}
 	return out
 }
@@ -296,9 +304,9 @@ func (g *Generator) tupleToFields(tu *types.Tuple, names bool) []*ast.Field {
 func (g *Generator) genClientMethodType(ctx *context, rpc *protobuf.RPC) *ast.FuncType {
 	signature := ctx.findSignature(rpc)
 	typ := &ast.FuncType{
-		Params: fields(g.tupleToFields(signature.Params(), true)...),
+		Params: fields(g.tupleToFields(ctx, signature.Params(), true)...),
 		// do not save return parameter names to prevent name collisions
-		Results: fields(g.tupleToFields(signature.Results(), false)...),
+		Results: fields(g.tupleToFields(ctx, signature.Results(), false)...),
 	}
 	if rpc.IsVariadic {
 		i := len(typ.Params.List) - 1
@@ -403,7 +411,11 @@ func newMessage(ctx *context, in protobuf.Type, args []*ast.Field) ast.Expr {
 
 func fromMessage(ctx *context, in protobuf.Type, out []*ast.Field) []ast.Expr {
 	if !isGenerated(in) && len(out) == 1 {
-		return []ast.Expr{ast.NewIdent("resp")}
+		name := ast.NewIdent("resp")
+		if !in.IsNullable() {
+			return []ast.Expr{&ast.StarExpr{X: name}}
+		}
+		return []ast.Expr{name}
 	}
 	typ := typeName(in)
 	msg := ctx.findMessage(typ)
@@ -424,10 +436,11 @@ func (g *Generator) genClientMethodBody(ctx *context, recv string, rpc *protobuf
 		rhs [3]ast.Expr
 	)
 	// first argument is context
-	if false { // TODO(dennwc): handle context, once merged
+	if rpc.HasCtx {
 		rhs[0] = ast.NewIdent(in[0].Names[0].Name)
 		in = in[1:]
 	} else {
+		ctx.addImport("context")
 		rhs[0] = call(packageSelector("context", "TODO"))
 	}
 	// second is the message
